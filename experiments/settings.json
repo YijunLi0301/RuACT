@@ -1,0 +1,56 @@
+{
+  "paths": {
+    "model": "",
+    "train_data": "",
+    "validation_data": "",
+    "output": "",
+    "seed_library": ""
+  },
+  "gpu_ids": [],
+  "judge": {
+    "api_base": "",
+    "api_key": "",
+    "model": ""
+  },
+  "generator": {
+    "api_base": "",
+    "api_key": "",
+    "model": ""
+  },
+  "training": {
+    "batch_size": 64,
+    "mini_batch_size": 32,
+    "micro_batch_size": 1,
+    "rollouts": 8,
+    "steps": 200,
+    "save_every": 20,
+    "validate_every": 20,
+    "seed": 42,
+    "prompt_length": 1024,
+    "response_length": 4096,
+    "model_length": 6144,
+    "learning_rate": 1e-06,
+    "kl_coefficient": 0.001,
+    "rollout_memory_fraction": 0.5,
+    "beta_target": 0.05,
+    "refinement_lambda": 0.5,
+    "logprob_micro_batch_size": 1,
+    "epochs": 1
+  },
+  "method_overrides": {
+    "Reweight": {
+      "micro_batch_size": 4
+    },
+    "RuscaRL": {
+      "micro_batch_size": 4,
+      "prompt_length": 8192,
+      "model_length": 12288,
+      "rollout_memory_fraction": 0.5
+    },
+    "DAPO-style": {
+      "epochs": 200
+    }
+  },
+  "hydra_overrides": {},
+  "allow_empty_seed_library": false
+}

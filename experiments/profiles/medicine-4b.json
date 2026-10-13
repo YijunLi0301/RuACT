@@ -1,0 +1,6 @@
+{
+  "model_family": "Qwen3-4B",
+  "training": {
+    "beta_target": 0.05
+  }
+}
