@@ -1,0 +1,17 @@
+comparison,evaluator,variant,benchmark,rows,score_percent,metric_record,source_sha256
+Gate,Qwen3.7-Max,RuACT-Teacher,RaR-Medicine,2242,58.70906657723797,archived summary,c43714f1bf40986508e1d78e3e81c3c82a20297938ace8329c3e0c112fa90cd0
+Gate,Qwen3.7-Max,RuACT-Teacher,HealthBench,500,37.71678077308019,archived summary,ee3e0f1ffa4825553bf88f6b3eb050738204671c46a8930e94c5954489c836c8
+Gate,Qwen3.7-Max,Without gate,RaR-Medicine,2242,58.70771927564265,archived summary,032746f480cc5cef699f192563b18fc276e415fb13c00de5a56b83d7e21e4b8a
+Gate,Qwen3.7-Max,Without gate,HealthBench,500,35.37723525476863,archived summary,c392269436023797c8be8828e4562943ea05467d2a1f1cdeefbb1d7f8ebbab5a
+Filter,DeepSeek-V4.1-Flash,RuACT-Critic,RaR-Medicine,2242,55.49978488690884,archived summary,919ec8fd2ea0ed434173d59f1b79996d53dcacc504890459a961d5babbf6bed1
+Filter,DeepSeek-V4.1-Flash,RuACT-Critic,HealthBench,500,38.77236739517231,archived summary,7d4ebcf0798099320e24a5576d31fd3ebd624e84cda962a34fcc295e9acbad57
+Filter,DeepSeek-V4.1-Flash,Without filter,RaR-Medicine,2242,54.99128002166902,archived summary,480fad39fdb1b2b7e2ed10a858fcaaa54dce8a6ba2acb4e88c14471aa42a56dd
+Filter,DeepSeek-V4.1-Flash,Without filter,HealthBench,500,38.49571190763005,archived summary,6960d1415b229ad46b6e11c97d6599ffacba42711d205717f82e5647101804c9
+Teacher target,DeepSeek-V4.1-Flash,Unreachable,RaR-Medicine,2242,55.146922548879594,archived summary,763acce090e5f8883e324d44285f6ca268ffe0f344e4c2ae2b09c68827652c01
+Teacher target,DeepSeek-V4.1-Flash,Unreachable,HealthBench,500,38.57209621579076,archived summary,69174f98ca13936cafe79ddb2250358b8cd09e95aa1a264bc39167526bfbfa39
+Teacher target,DeepSeek-V4.1-Flash,Saturated,RaR-Medicine,2242,55.00759482579185,archived summary,caad3208cc5a8d035c8c9d862f9bc550326c5714ecbb0d6582abdce27ff8a2ee
+Teacher target,DeepSeek-V4.1-Flash,Saturated,HealthBench,500,36.34989941613998,archived summary,4b4534bfe2c33c6371a4281bc3a8218183fd00481e6106f98af7f72572364147
+Critic target,DeepSeek-V4.1-Flash,Saturated,RaR-Medicine,2242,55.49978488690884,archived summary,919ec8fd2ea0ed434173d59f1b79996d53dcacc504890459a961d5babbf6bed1
+Critic target,DeepSeek-V4.1-Flash,Saturated,HealthBench,500,38.77236739517231,archived summary,7d4ebcf0798099320e24a5576d31fd3ebd624e84cda962a34fcc295e9acbad57
+Critic target,DeepSeek-V4.1-Flash,Unreachable,RaR-Medicine,2242,55.32132858714739,archived summary,0ea536be857217f5ee2471a354b783acaefcd32523af929521a90ba79199fb3a
+Critic target,DeepSeek-V4.1-Flash,Unreachable,HealthBench,500,37.55670679689693,archived summary,9aa5769ff93b2afb66027d86e36ae25bac80e445a67c4ff9817f985ce932603c

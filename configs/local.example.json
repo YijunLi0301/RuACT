@@ -1,0 +1,23 @@
+{
+  "paths": {
+    "model": "",
+    "train_data": "",
+    "validation_data": "",
+    "output": "",
+    "seed_library": ""
+  },
+  "gpu_ids": [
+    0,
+    1
+  ],
+  "judge": {
+    "api_base": "",
+    "api_key": "",
+    "model": ""
+  },
+  "generator": {
+    "api_base": "",
+    "api_key": "",
+    "model": ""
+  }
+}

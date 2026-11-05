@@ -1,0 +1,1 @@
+{"id":"format-example","query":"Explain why a metal spoon warms up in hot water.","rubrics":[{"description":"Explains heat conduction from the water into the spoon.","weight":2},{"description":"Claims that heat flows spontaneously from colder material to hotter material.","weight":-1}]}
