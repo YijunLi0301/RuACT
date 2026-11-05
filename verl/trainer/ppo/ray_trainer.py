@@ -23,7 +23,7 @@ from verl.utils.evidence import (
     merge_rollout_dump_metadata,
     write_resolved_config_snapshot,
 )
-from rubric_rl.adapter_factory import build_rubric_adaptation_adapter
+from ruact.adapter_factory import build_rubric_adaptation_adapter
 from verl.experimental.dataset.sampler import AbstractCurriculumSampler
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.ray import (
@@ -35,7 +35,7 @@ from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.config import AlgoConfig
 from verl.trainer.ppo import core_algos
 from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss
-from verl.trainer.ppo.distillation_context import find_over_context_rows
+from ruact.teacher.distillation_context import find_over_context_rows
 from verl.trainer.ppo.metric_utils import (
     compute_data_metrics,
     compute_group_signal_metrics,
@@ -45,12 +45,12 @@ from verl.trainer.ppo.metric_utils import (
     process_validation_metrics,
 )
 from verl.trainer.ppo.reward import compute_reward, compute_reward_async
-from verl.trainer.ppo.distillation import build_distillation_plan
-from verl.trainer.ppo.distillation_teacher import (
+from ruact.teacher.distillation import build_distillation_plan
+from ruact.teacher.distillation_teacher import (
     pad_indices_to_multiple,
     split_thinking_teacher_response,
 )
-from verl.trainer.ppo.distillation_teacher_gate import (
+from ruact.teacher.distillation_teacher_gate import (
     filter_anchors_by_teacher_verification,
     select_teacher_reward_feedback,
 )
@@ -746,18 +746,18 @@ class RayPPOTrainer:
         import sys
         from pathlib import Path
 
-        rubric_rl_dir = Path(__file__).resolve().parents[3] / "scripts" / "rubric_rl"
+        ruact_dir = Path(__file__).resolve().parents[3] / "ruact"
 
         def _load(name: str, filename: str):
             module = sys.modules.get(name)
             if module is not None:
                 return module
             spec = importlib.util.spec_from_file_location(
-                name, rubric_rl_dir / filename
+                name, ruact_dir / filename
             )
             if spec is None or spec.loader is None:
                 raise ImportError(
-                    f"cannot load teacher-gate module {filename} from {rubric_rl_dir}"
+                    f"cannot load teacher-gate module {filename} from {ruact_dir}"
                 )
             module = importlib.util.module_from_spec(spec)
             sys.modules[name] = module
@@ -765,8 +765,8 @@ class RayPPOTrainer:
             return module
 
         modules = (
-            _load("rubric_rl_teacher_gate_verl_reward", "verl_reward.py"),
-            _load("rubric_rl_teacher_gate_reward", "reward.py"),
+            _load("ruact_teacher_gate_verl_reward", "verl_reward.py"),
+            _load("ruact_teacher_gate_reward", "reward.py"),
         )
         self._teacher_gate_modules = modules
         return modules
@@ -2377,7 +2377,7 @@ class RayPPOTrainer:
                         if self.config.trainer.get("simple_reweight", {}).get(
                             "enabled", False
                         ):
-                            from rubric_rl.simple_reweight import (
+                            from ruact.baselines.simple_reweight import (
                                 apply as apply_reweight,
                             )
 

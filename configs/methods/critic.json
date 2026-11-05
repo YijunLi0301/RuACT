@@ -1,0 +1,10 @@
+{
+  "execution_mode": "feedback_batched",
+  "candidate_count": 5,
+  "min_children_per_parent": 1,
+  "max_children_per_parent": 3,
+  "max_queries_per_step": 32,
+  "topup_round_limit": 1,
+  "semantic_meta_enabled": false,
+  "meta_model": null
+}

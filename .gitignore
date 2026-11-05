@@ -8,3 +8,6 @@ outputs/
 .env.*
 *.log
 wandb/
+*.egg-info/
+build/
+dist/

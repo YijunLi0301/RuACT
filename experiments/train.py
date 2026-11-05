@@ -35,10 +35,11 @@ def _merge(target, values):
 
 
 def load_settings(domain, size, override_path):
-    settings = json.loads((ROOT / "experiments/settings.json").read_text())
+    settings = json.loads((ROOT / "configs/training.json").read_text())
     profile = json.loads(
-        (ROOT / "experiments/profiles" / (domain + "-" + size + ".json")).read_text()
+        (ROOT / "configs/profiles" / (domain + "-" + size + ".json")).read_text()
     )
+    settings["critic"] = json.loads((ROOT / "configs/methods/critic.json").read_text())
     _merge(settings, profile)
     if override_path:
         _merge(settings, json.loads(Path(override_path).read_text()))
@@ -66,6 +67,17 @@ def build(settings, method, preview=False):
         "saturated-RuACT-Critic",
         "unreachable-RuACT-Critic",
     )
+    critic = settings["critic"]
+    if critic["candidate_count"] != 5:
+        raise ValueError("The standard Critic uses exactly five initial candidates")
+    if type(critic["topup_round_limit"]) is not int or critic[
+        "topup_round_limit"
+    ] not in (0, 1):
+        raise ValueError("Critic supports zero or one feedback round")
+    if type(critic["semantic_meta_enabled"]) is not bool:
+        raise ValueError("semantic_meta_enabled must be boolean")
+    if critic["execution_mode"] not in {"feedback_batched", "single_pass_batched"}:
+        raise ValueError("Unknown Critic execution mode")
     paths = dict(settings["paths"])
     for key in ("model", "train_data", "validation_data", "seed_library"):
         if paths.get(key):
@@ -140,11 +152,15 @@ def build(settings, method, preview=False):
         "reward_model.reward_manager": "batch",
         "custom_reward_function.path": str(
             ROOT
-            / "scripts/rubric_rl"
+            / "ruact"
             / (
-                "reweight_reward.py"
+                "baselines/reweight_reward.py"
                 if method == "Reweight"
-                else "rusca_reward.py" if method == "RuscaRL" else "verl_reward.py"
+                else (
+                    "baselines/rusca_reward.py"
+                    if method == "RuscaRL"
+                    else "verl_reward.py"
+                )
             )
         ),
         "custom_reward_function.name": "compute_score_stream_single",
@@ -170,7 +186,7 @@ def build(settings, method, preview=False):
             "reward_model.use_reward_loop": True,
             "reward_model.reward_loop_source": "importlib",
             "reward_model.reward_loop_module_path": str(
-                base / "scripts/rubric_rl/group_reward_loop.py"
+                base / "ruact/group_reward_loop.py"
             ),
             "reward_model.reward_loop_class_name": "ImmediateJudgeRewardLoopManager",
             "reward_model.query_group_size": values["rollouts"],
@@ -214,13 +230,20 @@ def build(settings, method, preview=False):
                 "trainer.refinement.state_dir": str(output / "refinement"),
                 "trainer.refinement.mode": "active",
                 "trainer.refinement.blend_lambda": values["refinement_lambda"],
-                "trainer.refinement.min_candidate_count": 5,
-                "trainer.refinement.max_candidate_count": 5,
-                "trainer.refinement.max_children_per_parent": 3,
+                "trainer.refinement.min_candidate_count": critic["candidate_count"],
+                "trainer.refinement.max_candidate_count": critic["candidate_count"],
+                "trainer.refinement.min_children_per_parent": critic[
+                    "min_children_per_parent"
+                ],
+                "trainer.refinement.max_children_per_parent": critic[
+                    "max_children_per_parent"
+                ],
                 "trainer.refinement.seed_library_path": paths.get("seed_library")
                 or None,
                 "trainer.refinement.seed_candidate_cap": 5,
-                "trainer.refinement.max_queries_per_step": 32,
+                "trainer.refinement.max_queries_per_step": critic[
+                    "max_queries_per_step"
+                ],
                 "trainer.refinement.include_negative_weight": False,
             }
         )
@@ -263,7 +286,7 @@ def build(settings, method, preview=False):
         for k, v in overrides.items()
     ]
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = os.pathsep.join([str(base), str(base / "scripts")])
+    environment["PYTHONPATH"] = str(base)
     environment["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
     environment["WANDB_MODE"] = "disabled"
     environment["HEALTHBENCH_RUN_ID"] = method
@@ -295,13 +318,15 @@ def build(settings, method, preview=False):
     sidecar = (
         [
             sys.executable,
-            str(base / "scripts/rubric_rl/refinement_sidecar.py"),
+            str(base / "ruact/critic/sidecar.py"),
             "--state-dir",
             str(output / "refinement"),
             "--backend",
             "litellm",
             "--execution-mode",
-            "single_pass_batched",
+            critic["execution_mode"],
+            "--topup-round-limit",
+            str(critic["topup_round_limit"]),
             "--workers",
             "8",
             "--max-jobs",
@@ -315,7 +340,7 @@ def build(settings, method, preview=False):
             "--judge-inflight",
             "8",
             "--max-attempts",
-            "1",
+            "3",
             "--temperature",
             "0.8",
             "--max-tokens",
@@ -325,9 +350,57 @@ def build(settings, method, preview=False):
         if use_refinement
         else None
     )
+    if sidecar and critic["semantic_meta_enabled"]:
+        sidecar += ["--semantic-meta-enabled"]
+    if sidecar and critic.get("meta_model"):
+        sidecar += ["--meta-model", critic["meta_model"]]
     if sidecar and paths.get("seed_library"):
         sidecar += ["--preverified-library-path", paths["seed_library"]]
     return (base, output, command, sidecar, environment)
+
+
+def effective_configuration(settings, method, command, sidecar, environment=None):
+    resolved = {
+        item[2:].split("=", 1)[0]: json.loads(item.split("=", 1)[1])
+        for item in command[3:]
+    }
+
+    def redact(value):
+        if isinstance(value, dict):
+            return {
+                key: (
+                    "<redacted>"
+                    if key.lower().split(".")[-1]
+                    in {
+                        "api_key",
+                        "access_token",
+                        "token",
+                        "secret",
+                        "password",
+                        "authorization",
+                        "api_base",
+                        "base_url",
+                    }
+                    else redact(item)
+                )
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        return value
+
+    effective = redact(settings)
+    if environment:
+        for role in ("judge", "generator"):
+            effective[role]["model"] = environment.get(
+                "HEALTHBENCH_" + role.upper() + "_MODEL", ""
+            )
+    return {
+        "method": method,
+        "settings": effective,
+        "trainer": redact(resolved),
+        "critic_command": sidecar,
+    }
 
 
 def main():
@@ -345,7 +418,9 @@ def main():
     if args.dry_run:
         print(
             json.dumps(
-                {"package_root": str(base), "command": command, "sidecar": sidecar},
+                effective_configuration(
+                    settings, args.method, command, sidecar, environment
+                ),
                 indent=2,
             )
         )
@@ -353,6 +428,15 @@ def main():
     if output.exists() and any(output.iterdir()):
         raise ValueError("Choose an empty output directory for a fresh experiment")
     output.mkdir(parents=True, exist_ok=True)
+    (output / "resolved-config.json").write_text(
+        json.dumps(
+            effective_configuration(
+                settings, args.method, command, sidecar, environment
+            ),
+            indent=2,
+        )
+        + "\n"
+    )
     if args.method == "Reweight":
         (output / "judges.json").write_text(
             json.dumps(

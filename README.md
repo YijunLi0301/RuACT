@@ -1,167 +1,161 @@
-# RuACT supplementary code
+# RuACT
 
-This package provides one shared `verl` implementation for rubric-based reinforcement learning. RuACT combines RuACT-Teacher, which uses privileged rubric guidance for distillation, and RuACT-Critic, which refines reward rubrics. Experiment scripts select configurations of this shared implementation; they do not carry separate framework copies.
+RuACT uses rubrics in two complementary roles: a **Teacher** supplies privileged guidance on requirements that sampled responses fail to meet, while a **Critic** turns already-satisfied requirements into more discriminative child criteria. Both components train the same policy through one shared `verl` implementation.
+
+[Method](#method) · [Results](#benchmark-results) · [Analysis](#analysis) · [Quick start](#quick-start) · [Training guide](docs/training.md) · [Evaluation guide](docs/evaluation.md)
+
+## Method
+
+![RuACT overview](assets/overview.png)
+
+- **RuACT-Teacher** selects unreachable criteria, verifies the guided teacher response, and distills the privileged distribution on the selected student's response prefix.
+- **RuACT-Critic** selects saturated positive criteria, proposes five candidates, and judges them on the same eight responses. If fewer than the required minimum survive, it performs **at most one feedback-driven regeneration round**. Each parent retains at most three children.
+- **RuACT** combines the two components. The Teacher and Critic implementations are shared with their standalone variants.
+
+The standard candidate filter accepts pass counts from 2 through 6 out of 8. Candidate regeneration is distinct from retrying a failed API request. Independent semantic validation is available as an explicit option; when disabled, the audit records that it was not performed. See [Critic settings](configs/methods/critic.json) and the [method details](docs/training.md#critic-policy).
+
+## Benchmark results
+
+Scores below are recovered checkpoint evaluations with **DeepSeek-V4.1-Flash**, in percent; higher is better. Fine-tuned models use step 200. Medicine and Science are separate training runs. HealthBench and ResearchQA use fixed 500-question subsets; RaR-Medicine and RaR-Science contain 2,242 and 2,292 evaluation questions.
+
+| Model | Method | RaR-Medicine | HealthBench | RaR-Science | ResearchQA |
+|---|---|---:|---:|---:|---:|
+| 1.7B | Base model | 38.57 | 23.18 | 52.56 | 50.51 |
+| 1.7B | GRPO | 43.26 | 26.45 | — | — |
+| 1.7B | Reweight | 42.60 | 25.61 | 56.77 | 56.11 |
+| 1.7B | RuscaRL | 43.39 | 23.95 | 56.41 | 59.37 |
+| 1.7B | RuACT-Teacher | 43.82 | 25.16 | 58.42 | 57.76 |
+| 1.7B | RuACT-Critic | 43.24 | 27.97 | 58.16 | 59.85 |
+| 1.7B | RuACT | 43.35 | 27.83 | 56.83 | 57.55 |
+| 4B | Base model | 50.38 | 35.45 | 66.16 | 59.16 |
+| 4B | GRPO | 53.55 | 37.62 | 70.08 | 64.82 |
+| 4B | Reweight | 55.34 | 38.46 | — | — |
+| 4B | RuscaRL | 55.36 | 37.10 | 69.38 | 65.33 |
+| 4B | RuACT-Teacher | 55.15 | 38.57 | 70.53 | 66.12 |
+| 4B | RuACT-Critic | 55.50 | 38.77 | 70.47 | 64.62 |
+| 4B | RuACT | 56.34 | 40.12 | 70.59 | 69.44 |
+
+Values preserve the verified metric records: RaR-Science uses explicit weights; Medicine-4B uses the archived score summary, and the other columns use their verified aggregates. No cross-benchmark average is reported. A dash means the result is not established for that method: the Science-1.7B run previously labelled GRPO used a Teacher recipe, and Science-4B Reweight is unavailable. These historical scores are not fresh reruns of the consolidated code. [Values and source digests](analysis/data/checkpoint_scores.csv) · [Metric and comparability notes](analysis/README.md)
+
+## Analysis
+
+### Recovering unreachable criteria
+
+![Recovery of initially unreachable criteria](assets/teacher_recovery.png)
+
+On a fixed cohort of **931 initially unreachable criteria across 331 Medicine training queries**, a criterion is recovered if at least one of eight new responses satisfies it. At step 200, recovery is **35.02%** for GRPO, **38.78%** for RuACT-Teacher, and **42.86%** for RuACT. These are checkpoint-specific recovery rates, not cumulative counts.
+
+### Making the reward more discriminative
+
+![Within-group reward dispersion](assets/critic_dispersion.png)
+
+Each panel compares original and child-augmented rewards on the **same responses within one run**, over all 12,800 groups. Points average consecutive 20-step windows; no groups are excluded. Mean within-group standard deviation changes from **0.1182 to 0.1316** for RuACT-Critic and from **0.1217 to 0.1339** for RuACT. Dispersion is a mechanism diagnostic, not a measure of answer quality by itself.
+
+### Critic case study
+
+**Query:** What is the treatment plan for opiate intoxication?
+
+| Criterion | Requirement | Passing responses |
+|---|---|---:|
+| Parent | Emphasizes patient safety and continuous monitoring during treatment. | 8 / 8 |
+| Child: airway maintenance | Specifies immediate measures to maintain a patent airway before pharmacological reversal. | 2 / 8 |
+| Child: cardiac monitoring | Calls for continuous cardiac monitoring for arrhythmias or hypotension. | 4 / 8 |
+| Child: observation | Plans continued observation after naloxone for recurrent respiratory depression. | 6 / 8 |
+
+The same eight responses satisfy the parent, while the child criteria distinguish their coverage. Descriptions above are shortened for readability; [the recorded wording](analysis/data/critic_case.json) is included. Pass counts are historical judge labels, not clinical validation.
+
+### Ablations and target selection
+
+![Gate, filter, and target-selection comparisons](assets/ablations.png)
+
+Medicine-4B checkpoint comparisons at step 200. The gate panel uses Qwen3.7-Max; the other panels use DeepSeek-V4.1-Flash. **Compare bars within a panel.** The historical no-filter run also changed regeneration and minimum-child handling, so it is a joint workflow ablation. Target-selection runs share the evaluation cohorts, but full training-configuration matching has not been established. The figure describes observed checkpoints; it does not isolate every factor causally. [Exact values](analysis/data/ablation_scores.csv)
 
 ## Quick start
 
-Install `requirements.txt` into an environment with mutually compatible CUDA, PyTorch, vLLM and FlashAttention installations. The submission does not pin dependency releases or include binary environments. Add the repository root and `scripts` to `PYTHONPATH` when importing method utilities directly.
-
-Create a private `settings.local.json` by overriding the following fields from `experiments/settings.json`:
-
-- `paths.model`: a local checkpoint matching the selected model profile.
-- `paths.train_data` and `paths.validation_data`: prepared training and validation Parquet files.
-- `paths.output`: an empty directory for a fresh experiment.
-- `gpu_ids`: the intended visible GPU indices.
-- `judge`: compatible chat-completions API base, model identifier and authentication.
-- `generator`: the same fields for rubric generation, required only by RuACT-Critic.
-- `paths.seed_library`: the frozen rubric candidate library for RuACT-Critic.
-
-Endpoint credentials can instead be supplied through `HEALTHBENCH_JUDGE_API_KEY` and `HEALTHBENCH_GENERATOR_API_KEY`. Their corresponding `API_BASE` and `MODEL` environment variables also override settings. Do not redistribute populated settings files. The package has no default external service, credentials or hardware address.
+Install a CUDA-compatible PyTorch, vLLM and FlashAttention environment, then install the checkout:
 
 ```bash
+pip install -e .
+```
+
+Prepare the training and validation Parquet files as described in [data/README.md](data/README.md). Copy the local configuration template and fill in model, dataset, output, frozen candidate library, GPU and service settings:
+
+```bash
+cp configs/local.example.json settings.local.json
 bash experiments/main/medicine/4b/RuACT.sh --settings settings.local.json --dry-run
 bash experiments/main/medicine/4b/RuACT.sh --settings settings.local.json
-bash experiments/baselines/science/1.7b/Reweight.sh --settings settings.local.json
+```
+
+The dry run prints the effective configuration with credentials removed and makes no model requests. A real run saves `resolved-config.json` in its output directory. API authentication may be supplied by environment variables; populated local settings are excluded from Git. Fresh training requires an empty output directory.
+
+Other experiment groups use the same launcher and framework:
+
+```bash
+bash experiments/main/science/1.7b/RuACT-Critic.sh --settings settings.local.json
+bash experiments/baselines/medicine/4b/Reweight.sh --settings settings.local.json
 bash experiments/analysis/medicine/4b/no-filter.sh --settings settings.local.json
 ```
 
-Dry runs construct commands without launching training, workers or API requests. All scripts call `experiments/train.py`. Configuration precedence is common settings, model/domain profile, private settings, method overrides, and finally explicit `hydra_overrides`. Set a method-specific field under `method_overrides` when overriding that method's defaults. Training is fresh by default, uses console logging, and refuses a nonempty output directory.
+| Group | Entries |
+|---|---|
+| Main experiments | GRPO, RuACT-Teacher, RuACT-Critic, RuACT; Medicine/Science × 1.7B/4B |
+| Baselines | GRPO, Reweight, RuscaRL; the two GRPO entrypoints resolve identically |
+| Analysis | GRPO-OPSD, DAPO-style, no-gate, no-filter, and normal/reversed target selectors; Medicine-4B |
 
-## File structure
+Reweight is a rubric-reweighting implementation inspired by prior work, not a full reproduction of another system. DAPO-style implements group filtering and refill, not the complete DAPO method. Exact definitions are in the [training guide](docs/training.md).
+
+### Shared defaults
+
+| Setting | Value |
+|---|---|
+| Optimizer updates / responses per query | 200 / 8 |
+| Batch / PPO mini-batch | 64 / 32 |
+| Learning rate / actor KL coefficient | 1e-6 / 0.001 |
+| Prompt / response / total context limits | 1,024 / 4,096 / 6,144 tokens |
+| Checkpoint and validation interval | 20 updates |
+| Teacher target coefficient | 0.1 at 1.7B; 0.05 at 4B |
+| Critic blend coefficient | 0.5 |
+| Critic candidates / additional generation rounds | 5 / at most 1 |
+| Selected parents per query / children per parent | at most 3 / at most 3 |
+
+The internal Teacher coefficient is divided by the eight-response group size. Per-method memory, micro-batch and context differences are explicit in [configs/training.json](configs/training.json).
+
+## Evaluation
+
+Generate frozen responses, verify their identity and coverage, then score and aggregate using the explicit rubric weights. Commands and required service variables are in [docs/evaluation.md](docs/evaluation.md). The scorer preserves rubric order and records judge attempts and rollout length-termination flags.
+
+## Repository map
 
 ```text
-RuACT-submission/
-├── README.md
-├── THIRD_PARTY_NOTICES.txt
-├── requirements.txt
+RuACT/
+├── ruact/
+│   ├── teacher/             Teacher selection, verification and guidance
+│   ├── critic/              Candidate generation, validation and feedback
+│   ├── baselines/           Reweight and RuscaRL
+│   └── reward.py            Signed rubric reward
+├── verl/                    Shared distributed training runtime
+├── configs/                 Common, profile and method configurations
 ├── experiments/
-│   ├── train.py
-│   ├── settings.json
-│   ├── profiles/
-│   │   ├── medicine-1.7b.json
-│   │   ├── medicine-4b.json
-│   │   ├── science-1.7b.json
-│   │   └── science-4b.json
-│   ├── main/{medicine,science}/{1.7b,4b}/
-│   │   ├── GRPO.sh
-│   │   ├── RuACT-Teacher.sh
-│   │   ├── RuACT-Critic.sh
-│   │   └── RuACT.sh
-│   ├── baselines/{medicine,science}/{1.7b,4b}/
-│   │   ├── GRPO.sh
-│   │   ├── Reweight.sh
-│   │   └── RuscaRL.sh
-│   └── analysis/medicine/4b/
-│       ├── GRPO-OPSD.sh
-│       ├── DAPO-style.sh
-│       ├── no-gate.sh
-│       ├── no-filter.sh
-│       ├── unreachable-RuACT-Teacher.sh
-│       ├── saturated-RuACT-Critic.sh
-│       ├── saturated-RuACT-Teacher.sh
-│       └── unreachable-RuACT-Critic.sh
-├── scripts/rubric_rl/
-│   ├── verl_reward.py
-│   ├── group_reward_loop.py
-│   ├── reweight_reward.py
-│   ├── simple_reweight.py
-│   ├── rusca_reward.py
-│   ├── ruscarl.py
-│   ├── refinement_sidecar.py
-│   └── refinement/
-│       ├── protocol.py
-│       ├── adapter.py
-│       ├── registry.py
-│       ├── worker.py
-│       ├── single_pass_worker.py
-│       └── bounded_retry.py
-├── verl/
-│   ├── trainer/ppo/
-│   │   ├── ray_trainer.py
-│   │   ├── distillation.py
-│   │   └── dynamic_sampling.py
-│   ├── experimental/agent_loop/
-│   ├── workers/
-│   └── utils/
-├── configs/
-├── evaluation/
-└── tests/
+│   ├── main/                Main methods
+│   ├── baselines/           Baseline launch scripts
+│   ├── analysis/            Ablation launch scripts
+│   └── train.py             Common launcher
+├── evaluation/              Rollout, scoring, verification and aggregation
+├── data/                    Data contract and preparation utility
+├── analysis/                Figure data and plotting script
+├── assets/                  README figures
+├── docs/                    Training and evaluation guides
+└── tests/                   Teacher, Critic, reward and baseline checks
 ```
 
-Brace notation abbreviates actual directories. There are sixteen main scripts, twelve baseline scripts, and eight analysis scripts. The two GRPO categories invoke the same configuration. The remaining framework and utility files are omitted from the tree for readability.
+The framework retains its distributed execution, actor loss and rollout integrations; there are no per-experiment `verl` copies. DeepRubric data is described in the data contract, but a verified DeepRubric-7B training recipe is not included in this release.
 
-## Training configurations
-
-All four profiles target Qwen3 models of the indicated size and use the same Medicine-4B RuACT-Critic policy. Dataset paths are supplied separately, so choosing a profile does not silently select or download data.
-
-| Setting | Shared default |
-|---|---|
-| Optimizer steps | 200 |
-| Prompt groups per update | 64 |
-| Responses per prompt | 8 |
-| PPO mini-batch size | 32 |
-| Actor/reference/log-probability micro-batch | 1 |
-| Learning rate / warmup | 0.000001 / 12 steps |
-| Prompt / response / model token limits | 1024 / 4096 / 6144 |
-| Rollout temperature / top-p | 1 / 1 |
-| Actor KL coefficient | 0.001, k1 estimator |
-| KL in reward | Disabled |
-| Seed | 42 |
-| Checkpoint / validation frequency | Every 20 steps |
-| RuACT-Teacher target coefficient | 0.1 for 1.7B; 0.05 for 4B |
-| Internal teacher coefficient | Target divided by 8, with 50-step warmup |
-| RuACT-Critic blend coefficient | 0.5 |
-| Actor optimizer / reference parameters | CPU offload enabled |
-
-Reweight and RuscaRL use actor micro-batches of four. RuscaRL additionally uses an 8192-token original prompt limit, a 12288-token total context, and rollout memory fraction 0.5. Its additional rubric prefix must fit the total context; overflow raises an error. The standard rollout memory fraction is 0.5. These differences are explicit in `method_overrides`; they are not hidden changes to the effective batch size.
-
-The standard epoch limit is one and training is capped at 200 updates. The prepared dataset must supply enough batches for that cap. DAPO-style allows up to 200 dataset passes because rejected groups consume additional batches, while retaining the same cap of 200 optimizer updates. Insufficient valid groups or exhaustion of this limit raises an error.
-
-## Shared RuACT-Critic policy
-
-The Medicine-4B RuACT configuration is the common reference for all domains and sizes:
-
-1. Consider positive-weight parent rubrics satisfied by all eight responses. Rank eligible parents by weight, retaining at most three parents per query and at most thirty-two queries per update.
-2. Use a candidate budget of five per selected parent. Reuse up to five candidates with matching query, parent identity and parent fingerprint from the frozen seed library, then request exactly the missing count. Structural validation and deduplication can reduce the final pool; this does not trigger replenishment. The generator sees the query and parent requirement, not the sampled answers.
-3. Candidate preparation has at most three total attempts, with one transport attempt per call, a forty-second call limit and a one-hundred-twenty-second parent budget. Exhaustion is an explicit failure, not a fabricated successful decomposition.
-4. Judge the same eight responses against the merged candidate list. Keep candidates with pass counts from two through six inclusive, retaining the first three eligible candidates in candidate order. A parent with no eligible child retains its original reward contribution. There is no score-dependent regeneration to fill the three-child cap. Candidate acceptance here is structural validation; no independent semantic meta-judge is performed.
-5. For an accepted parent, retain half its weight on the original rubric and distribute the other half equally among its retained children. Total parent-family weight is preserved.
-
-Strict judge recovery preserves successful rows, retries failed rows and can split malformed or truncated responses into smaller rubric chunks. These scoring retries are separate from the three candidate-generation attempts. The trainer's result wait is bounded; endpoint failure cannot be treated as a valid all-zero scoring result in this path.
-
-A frozen seed library is required by default. Selecting `allow_empty_seed_library: true` explicitly enables a different, empty-seed initialization; it must not be reported as reproducing a seeded run. The library and the exact input datasets are not bundled with this anonymous code package.
-
-## Baselines and analyses
-
-Reweight is an implementation inspired by rubric reweighting, not a complete reproduction of another training system. For binary occurrence score `s`, satisfaction is `g=s` for a positive rubric and `g=1-s` for a negative rubric. With group mean `p=mean(g)`, the multiplier is `1 + eta * 4*p*(1-p)`, with `eta=0.5`. Rewards average satisfaction using `abs(weight)` times this multiplier, normalized by the sum of these effective weights. Constant rubrics retain multiplier one and remain in the denominator. Its inherited judge failure policy makes up to five attempts and records explicit zero fallback on exhaustion; this differs from strict RuACT-Critic scoring and should be accounted for when comparing API failure rates.
-
-RuscaRL adds a randomly selected subset of signed rubric descriptions to the generation prompt. For response index `i` in a group of size `K`, its reveal fraction is `(K-1-i)/(K-1) * sigmoid(-125*(progress-0.2))`, with `progress=(step-1)/(total_steps-1)`. The rounded subset size and original sampling rule are retained. Policy training uses the original unprivileged prompt, and validation has no rubric scaffold. The rollout backend is integrated into the shared asynchronous single-turn implementation; this consolidation is not a claim of a byte-identical historical runtime. RuscaRL's judge uses strict scoring with three total attempts.
-
-| Analysis entry | Behavior |
-|---|---|
-| GRPO-OPSD | Inject all rubrics in original order, retain teacher verification, disable critic refinement, and allow a 16384-token privileged context. |
-| DAPO-style | Drop groups whose reward standard deviation is at most 0.00000001 and refill the same update to sixty-four groups, within eight sampling rounds. It does not implement the complete DAPO algorithm. |
-| no-gate | RuACT-Teacher with teacher verification disabled. |
-| no-filter | RuACT-Critic with the child pass-count filter disabled; retain the first three structurally valid candidates from the same fixed candidate budget of five. |
-| unreachable-RuACT-Teacher | Explicit alias for the normal teacher selector. |
-| saturated-RuACT-Critic | Explicit alias for the normal critic selector. |
-| saturated-RuACT-Teacher | Reverse the teacher selector while retaining other teacher settings. |
-| unreachable-RuACT-Critic | Reverse the critic selector while retaining the common critic policy. |
-
-For negative-weight teacher rubrics, the normal selector targets a violation present in all responses; the reversed selector targets a violation absent from all responses. Critic parent selection remains positive-weight only. The no-filter control preserves structural validation, deduplication, seed handling, scoring, and bounded candidate preparation. It removes the outcome filter rather than introducing another candidate-generation loop.
-
-These are normalized submission recipes. Divergent historical worker implementations, infrastructure settings or jointly changed analysis settings are not silently preserved as additional framework forks. Historical numerical results should be associated with their actual original settings; the unified controls must not be described as retrospective reruns.
-
-## Evaluation and verification
-
-`evaluation/rollout_only.py` generates frozen responses. `evaluation/verify_eval.py` checks identity, coverage and scored outputs. `evaluation/aggregate_official.py` aggregates rubric-level scores. Evaluation data, checkpoints, endpoints and authentication are external inputs.
+## Method checks and figure reproduction
 
 ```bash
-PYTHONPATH=.:scripts pytest -q tests
+pip install -e '.[test,analysis]'
+pytest -q
+python analysis/plot_results.py
 ```
 
-Tests cover the experiment matrix, resolved framework configurations, teacher selection and student-prefix behavior, fixed candidate budgets, seed reuse, retry bounds, strict scoring recovery, no-filter behavior, Reweight arithmetic, RuscaRL generation/training prompt separation, and dynamic sampling. These are local CPU checks with mocked remote calls. They do not establish end-to-end GPU training or reproduce benchmark scores.
-
-## Privacy and third-party code
-
-The package excludes credentials, private endpoints, server identifiers, training logs, checkpoints and private data. Tracking is disabled by default. Source comments and documentation strings have been removed; method descriptions are centralized in this English README. Necessary dependency compatibility checks and third-party license notices remain. `THIRD_PARTY_NOTICES.txt` preserves required attribution and copyright information.
+The focused tests exercise method branches and numerical invariants on CPU with fixed judge responses. They do not run GPU training or establish benchmark performance. Third-party attribution is retained in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).

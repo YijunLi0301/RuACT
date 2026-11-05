@@ -1,0 +1,29 @@
+{
+  "query": "What is the treatment plan for opiate intoxication?",
+  "criteria": [
+    {
+      "criterion": "Parent",
+      "description": "Essential Criteria: Emphasizes patient safety and the need for continuous monitoring during treatment.",
+      "passes": 8,
+      "responses": 8
+    },
+    {
+      "criterion": "Airway maintenance",
+      "description": "Specifies the need for immediate interventions to maintain a patent airway, such as jaw-thrust or positioning, prior to pharmacologic reversal.",
+      "passes": 2,
+      "responses": 8
+    },
+    {
+      "criterion": "Cardiac monitoring",
+      "description": "Mentions the requirement for continuous cardiac monitoring to detect arrhythmias or hypotension associated with opioid overdose.",
+      "passes": 4,
+      "responses": 8
+    },
+    {
+      "criterion": "Observation",
+      "description": "Includes a plan for continued observation after naloxone administration to manage the risk of rebound respiratory depression due to the shorter half-life of the antagonist.",
+      "passes": 6,
+      "responses": 8
+    }
+  ]
+}

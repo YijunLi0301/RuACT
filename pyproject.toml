@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ruact"
+dynamic = ["version", "dependencies"]
+description = "Rubric-guided teacher distillation and critic refinement for reinforcement learning"
+readme = "README.md"
+
+[project.optional-dependencies]
+analysis = ["matplotlib"]
+test = ["pytest"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["ruact*", "verl*", "evaluation*"]
+
+[tool.setuptools.package-data]
+verl = ["**/*.yaml", "**/*.json", "**/*.jinja"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

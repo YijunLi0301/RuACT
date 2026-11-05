@@ -46,7 +46,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
             and "training_step" in kwargs
             and not kwargs.get("_is_validation", False)
         ):
-            from rubric_rl.ruscarl import scaffold_prompt
+            from ruact.baselines.ruscarl import scaffold_prompt
 
             generation_prompt_ids, scaffold_metrics = scaffold_prompt(
                 self.tokenizer,
